@@ -413,7 +413,7 @@ class WanVideoPipeline(BasePipeline):
         vace_reference_image: Optional[Image.Image] = None,
         vace_scale: Optional[float] = 1.0,
         # Randomness
-        seed: Optional[int] = None,
+        seed: Optional[int] = 10007,
         rand_device: Optional[str] = "cpu",
         # Shape
         height: Optional[int] = 480,

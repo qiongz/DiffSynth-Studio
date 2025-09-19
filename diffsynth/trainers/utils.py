@@ -7,7 +7,11 @@ import pandas as pd
 from tqdm import tqdm
 from accelerate import Accelerator
 from accelerate.utils import DistributedDataParallelKwargs
-
+from torch.utils.data.distributed import DistributedSampler
+from safetensors.torch import save_file
+import deepspeed
+import numpy as np
+import random
 
 
 class ImageDataset(torch.utils.data.Dataset):
@@ -476,47 +480,56 @@ class DiffusionTrainingModule(torch.nn.Module):
                     print(f"Warning, LoRA key mismatch! Unexpected keys in LoRA checkpoint: {load_result[1]}")
             setattr(pipe, lora_base_model, model)
 
-
 class ModelLogger:
-    def __init__(self, output_path, remove_prefix_in_ckpt=None, state_dict_converter=lambda x:x):
+    def __init__(self, output_path, remove_prefix_in_ckpt=None, state_dict_converter=lambda x: x):
         self.output_path = output_path
         self.remove_prefix_in_ckpt = remove_prefix_in_ckpt
         self.state_dict_converter = state_dict_converter
         self.num_steps = 0
 
-
-    def on_step_end(self, accelerator, model, save_steps=None):
+    def on_step_end(self, engine, save_steps=None):
         self.num_steps += 1
         if save_steps is not None and self.num_steps % save_steps == 0:
-            self.save_model(accelerator, model, f"step-{self.num_steps}.safetensors")
+            self.save_model(engine, f"step-{self.num_steps}.safetensors")
 
+    def on_epoch_end(self, engine, epoch_id):
+        self.save_model(engine, f"epoch-{epoch_id}.safetensors")
 
-    def on_epoch_end(self, accelerator, model, epoch_id):
-        accelerator.wait_for_everyone()
-        if accelerator.is_main_process:
-            state_dict = accelerator.get_state_dict(model)
-            state_dict = accelerator.unwrap_model(model).export_trainable_state_dict(state_dict, remove_prefix=self.remove_prefix_in_ckpt)
-            state_dict = self.state_dict_converter(state_dict)
-            os.makedirs(self.output_path, exist_ok=True)
-            path = os.path.join(self.output_path, f"epoch-{epoch_id}.safetensors")
-            accelerator.save(state_dict, path, safe_serialization=True)
-
-
-    def on_training_end(self, accelerator, model, save_steps=None):
+    def on_training_end(self, engine, save_steps=None):
         if save_steps is not None and self.num_steps % save_steps != 0:
-            self.save_model(accelerator, model, f"step-{self.num_steps}.safetensors")
+            self.save_model(engine, f"step-{self.num_steps}.safetensors")
 
-
-    def save_model(self, accelerator, model, file_name):
-        accelerator.wait_for_everyone()
-        if accelerator.is_main_process:
-            state_dict = accelerator.get_state_dict(model)
-            state_dict = accelerator.unwrap_model(model).export_trainable_state_dict(state_dict, remove_prefix=self.remove_prefix_in_ckpt)
+    def save_model(self, engine, file_name):
+        state_dict = self._get_model_state_dict(engine)
+        
+        if engine.global_rank == 0:
             state_dict = self.state_dict_converter(state_dict)
             os.makedirs(self.output_path, exist_ok=True)
-            path = os.path.join(self.output_path, file_name)
-            accelerator.save(state_dict, path, safe_serialization=True)
+            save_path = os.path.join(self.output_path, file_name)
+            save_file(state_dict, save_path)
 
+    def _get_model_state_dict(self, engine):
+        if engine.zero_optimization_stage() == 3:
+            full_state_dict = engine._zero3_consolidated_16bit_state_dict()
+            if full_state_dict is None:
+                return {}
+            
+            return self._extract_trainable_state(
+                engine,
+                state_dict={k: v.float() for k, v in full_state_dict.items()}
+            )
+        else:
+            return self._extract_trainable_state(
+                engine,
+                state_dict=engine.module.state_dict()
+            )
+
+    def _extract_trainable_state(self, engine, state_dict):
+        trainable_state = engine.module.export_trainable_state_dict(
+            state_dict, 
+            remove_prefix=self.remove_prefix_in_ckpt
+        )
+        return trainable_state
 
 def launch_training_task(
     dataset: torch.utils.data.Dataset,
@@ -542,28 +555,26 @@ def launch_training_task(
     
     optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
-    dataloader = torch.utils.data.DataLoader(dataset, shuffle=True, collate_fn=lambda x: x[0], num_workers=num_workers)
-    accelerator = Accelerator(
-        gradient_accumulation_steps=gradient_accumulation_steps,
-        kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=find_unused_parameters)],
+
+    # using deepspeed to support multi-nodes training
+    deepspeed.init_distributed()
+    dataset_sampler = DistributedSampler(
+        dataset,
+        shuffle=True,
+        seed=args.seed,
+        drop_last=True
     )
-    model, optimizer, dataloader, scheduler = accelerator.prepare(model, optimizer, dataloader, scheduler)
-    
+    dataloader = torch.utils.data.DataLoader(dataset, sampler=dataset_sampler, collate_fn=lambda x: x[0], num_workers=num_workers)
+    model_engine, optimizer, _, _ = deepspeed.initialize(args = args, model = model, model_parameters = model.parameters(), optimizer = optimizer, lr_scheduler=scheduler)
     for epoch_id in range(num_epochs):
         for data in tqdm(dataloader):
-            with accelerator.accumulate(model):
-                optimizer.zero_grad()
-                if dataset.load_from_cache:
-                    loss = model({}, inputs=data)
-                else:
-                    loss = model(data)
-                accelerator.backward(loss)
-                optimizer.step()
-                model_logger.on_step_end(accelerator, model, save_steps)
-                scheduler.step()
+            loss = model_engine(data)
+            model_engine.backward(loss)
+            model_engine.step()
+            model_logger.on_step_end(model_engine, save_steps)
         if save_steps is None:
-            model_logger.on_epoch_end(accelerator, model, epoch_id)
-    model_logger.on_training_end(accelerator, model, save_steps)
+            model_logger.on_epoch_end(model_engine, epoch_id)
+    
 
 
 def launch_data_process_task(
@@ -613,6 +624,7 @@ def wan_parser():
     parser.add_argument("--lora_rank", type=int, default=32, help="Rank of LoRA.")
     parser.add_argument("--lora_checkpoint", type=str, default=None, help="Path to the LoRA checkpoint. If provided, LoRA will be loaded from this checkpoint.")
     parser.add_argument("--extra_inputs", default=None, help="Additional model inputs, comma-separated.")
+    parser.add_argument("--use_gradient_checkpointing", default=False, action="store_true", help="Whether to use gradient checkpointing.")
     parser.add_argument("--use_gradient_checkpointing_offload", default=False, action="store_true", help="Whether to offload gradient checkpointing to CPU memory.")
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1, help="Gradient accumulation steps.")
     parser.add_argument("--max_timestep_boundary", type=float, default=1.0, help="Max timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
@@ -621,6 +633,10 @@ def wan_parser():
     parser.add_argument("--save_steps", type=int, default=None, help="Number of checkpoint saving invervals. If None, checkpoints will be saved every epoch.")
     parser.add_argument("--dataset_num_workers", type=int, default=0, help="Number of workers for data loading.")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay.")
+    parser.add_argument('--seed', type=int, default=10007, required=False, help='seed for torch/random/numpy rng')
+    parser.add_argument('--local_rank', type=int, default=-1,
+                    help='deepspeed local rank passed from distributed launcher')
+    parser = deepspeed.add_config_arguments(parser)
     return parser
 
 
@@ -654,6 +670,10 @@ def flux_parser():
     parser.add_argument("--save_steps", type=int, default=None, help="Number of checkpoint saving invervals. If None, checkpoints will be saved every epoch.")
     parser.add_argument("--dataset_num_workers", type=int, default=0, help="Number of workers for data loading.")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay.")
+    parser.add_argument('--seed', type=int, default=10007, required=False, help='seed for torch/random/numpy rng')
+    parser.add_argument('--local_rank', type=int, default=-1,
+                    help='deepspeed local rank passed from distributed launcher')
+    parser = deepspeed.add_config_arguments(parser)
     return parser
 
 
@@ -690,4 +710,8 @@ def qwen_image_parser():
     parser.add_argument("--processor_path", type=str, default=None, help="Path to the processor. If provided, the processor will be used for image editing.")
     parser.add_argument("--enable_fp8_training", default=False, action="store_true", help="Whether to enable FP8 training. Only available for LoRA training on a single GPU.")
     parser.add_argument("--task", type=str, default="sft", required=False, help="Task type.")
+    parser.add_argument('--seed', type=int, default=10007, required=False, help='seed for torch/random/numpy rng')
+    parser.add_argument('--local_rank', type=int, default=-1,
+                    help='deepspeed local rank passed from distributed launcher')
+    parser = deepspeed.add_config_arguments(parser)
     return parser
