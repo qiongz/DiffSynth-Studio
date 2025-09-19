@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=mi325x-dist-train-example
 #SBATCH --output=logs/slurm/mi325x-dist.%j.out
-#SBATCH --nodelist=gpu-18,gpu-9
+#SBATCH --nodelist=gpu-18,gpu-9,gpu-22
 #SBATCH --gres=gpu:8
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=256
@@ -15,11 +15,18 @@ set -euo pipefail
 echo "JobID: $SLURM_JOB_ID"
 
 # ========== 0) docker & 训练脚本参数 ==========
-export PROJECT_DIR_ON_HOST="$HOME/codes/DiffSynth-Studio"
-export PROJECT_DIR_IN_CONTAINER="/workdir/codes/DiffSynth-Studio"
+export PROJECT_DIR_ON_HOST="$HOME/DiffSynth-Studio"
+export PROJECT_DIR_IN_CONTAINER="/workdir/DiffSynth-Studio"
 export TRAIN_SCRIPT_IN_CONTAINER="examples/wanvideo/model_training/full/Wan2.1-I2V-14B-720P_dist.sh"
 export DOCKER_IMAGE="docker.io/rocm/ali-private:rocm6.4.3_ubuntu22.04_py3.10_pytorch_2.8.0_ck_fa3_fremont_dist_250917"
 export CONTAINER_CMD="podman"
+# ========== 0b) Podman 镜像本地 tar 加载配置 ==========
+# 镜像 tar 路径
+export IMAGE_TAR="/shared/data/FX2/rocm6.4.3_ubuntu22.04_py3.10_pytorch_2.8.0_ck_fa3_fremont_dist_250917.tar"
+export CHECK_IMAGE="${CHECK_IMAGE:-1}"
+
+
+
 
 # docker 下传递 data, models 等目录软连接
 export WORKDIR="$HOME"
@@ -91,6 +98,63 @@ export NCCL_IB_GID_INDEX="${NCCL_IB_GID_INDEX:-3}"
 
 # export FIXED_NIC="${FIXED_NIC:-enp49s0f1np1}" # lmx5
 export FIXED_NIC="${FIXED_NIC:-enp49s0f0np0}"  # ROCE (默认)
+
+
+# ========== 5.6) 在所有节点上检查镜像 tag；若不存在则从本地 tar 加载 ==========
+# ========== 5.6) 在所有节点上检查镜像 tag；若不存在则仅从本地 tar 加载（无回退拉取） ==========
+if [ "${CONTAINER_CMD}" = "podman" ] && [ "${CHECK_IMAGE}" -eq 1 ]; then
+  echo "开始在所有节点上检查镜像：${DOCKER_IMAGE}；若不存在，仅从本地 tar 加载：${IMAGE_TAR}"
+  export DOCKER_IMAGE IMAGE_TAR CONTAINER_CMD
+
+  # 每节点检查/加载一次；任何节点失败则作业退出（set -e 生效）
+  srun --ntasks-per-node=1 bash -lc '
+    set -euo pipefail
+    host=$(hostname)
+
+    if ! command -v podman >/dev/null 2>&1; then
+      echo "[${host}] 未找到 podman，请联系管理员安装或检查 PATH"
+      exit 1
+    fi
+
+    if '"${CONTAINER_CMD}"' image exists "'"${DOCKER_IMAGE}"'"; then
+      echo "[${host}] 镜像已存在：'"${DOCKER_IMAGE}"'"
+      exit 0
+    fi
+
+    echo "[${host}] 镜像不存在，准备从本地 tar 加载：'"${IMAGE_TAR}"'"
+    if [ ! -f "'"${IMAGE_TAR}"'" ]; then
+      echo "[${host}] 错误：未找到镜像 tar 文件：'"${IMAGE_TAR}"'"
+      exit 1
+    fi
+
+    load_out=$('"${CONTAINER_CMD}"' load -i "'"${IMAGE_TAR}"'")
+    echo "[${host}] $load_out"
+
+    # 某些 tar 内部名字可能与 DOCKER_IMAGE 不一致——补打一份期望 tag
+    if ! '"${CONTAINER_CMD}"' image exists "'"${DOCKER_IMAGE}"'"; then
+      loaded_ref=$(echo "$load_out" | awk -F": " '"'"'/Loaded image\(s\)/{print $2; exit}'"'"')
+      if [ -n "${loaded_ref:-}" ] && '"${CONTAINER_CMD}"' image exists "${loaded_ref}"; then
+        '"${CONTAINER_CMD}"' tag "${loaded_ref}" "'"${DOCKER_IMAGE}"'"
+      else
+        # 退路：给最新导入的镜像 ID 打期望 tag
+        imgid=$('"${CONTAINER_CMD}"' images --sort=created --format "{{.ID}}" | head -n1)
+        if [ -n "${imgid:-}" ]; then
+          '"${CONTAINER_CMD}"' tag "${imgid}" "'"${DOCKER_IMAGE}"'"
+        fi
+      fi
+    fi
+
+    if '"${CONTAINER_CMD}"' image exists "'"${DOCKER_IMAGE}"'"; then
+      echo "[${host}] 镜像就绪：'"${DOCKER_IMAGE}"'"
+      exit 0
+    else
+      echo "[${host}] 错误：加载后仍缺少期望 tag：'"${DOCKER_IMAGE}"'"
+      exit 1
+    fi
+  '
+  echo "镜像检查/加载完成。"
+fi
+
 
 # ========== 6) 启动（每节点一个容器；容器内 deepspeed --no_ssh 起本地 8 进程） ==========
 srun --kill-on-bad-exit=1  bash -c '

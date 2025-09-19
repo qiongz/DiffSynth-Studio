@@ -3,6 +3,7 @@
 
 ## 1. Envs
 ### Code
+At aac home folder
 ```bash
 git clone git@github.com:qiongz/DiffSynth-Studio.git
 cd DiffSynth-Studio
@@ -27,8 +28,10 @@ Importance parameters:
 - `--reservation=gpu-22_gpu-18_gpu-16_gpu-9_reservation`: reservation group
 - `--partition=256C8G1H_MI325X_Ubuntu22`: reservation partition
 - `--nodelist=gpu-18,gpu-9,gpu-22`: nodes for training
-- `export IMAGE_TAR="/shared/data/FX2/rocm6.4.3_ubuntu22.04_py3.10_pytorch_2.8.0_ck_fa3_fremont_dist_250917.tar"`: DOCKER tar path, ask administrator for read permission
-- `export DOCKER_IMAGE="docker.io/rocm/ali-private:rocm6.4.3_ubuntu22.04_py3.10_pytorch_2.8.0_ck_fa3_fremont_dist_250917"`: DOCKER image tag, corresponding to IMAGE_TAR
+- `export PROJECT_DIR_ON_HOST="$HOME/DiffSynth-Studio"`: project path
+- `export PROJECT_DIR_IN_CONTAINER="/workdir/DiffSynth-Studio"`: project path in docker, maps home folder -> workdir
+- `export IMAGE_TAR="/shared/data/FX2/rocm6.4.3_ubuntu22.04_py3.10_pytorch_2.8.0_ck_fa3_fremont_dist_250917.tar"`: DOCKER local tar
+- `export DOCKER_IMAGE="docker.io/rocm/ali-private:rocm6.4.3_ubuntu22.04_py3.10_pytorch_2.8.0_ck_fa3_fremont_dist_250917"`: DOCKER tag
 - `export TRAIN_SCRIPT_IN_CONTAINER="examples/wanvideo/model_training/full/Wan2.1-I2V-14B-720P_dist.sh"`: training script
 
 
