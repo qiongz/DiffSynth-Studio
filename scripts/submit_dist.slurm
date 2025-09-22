@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=mi325x-dist-train-example
 #SBATCH --output=logs/slurm/mi325x-dist.%j.out
-#SBATCH --nodelist=gpu-9,gpu-22
+#SBATCH --nodelist=gpu-22
 #SBATCH --gres=gpu:8
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=256
@@ -21,7 +21,7 @@ export TRAIN_SCRIPT_IN_CONTAINER="examples/wanvideo/model_training/full/Wan2.1-I
 export DOCKER_IMAGE="docker.io/rocm/ali-private:rocm6.4.3_ubuntu22.04_py3.10_pytorch_2.8.0_ck_fa3_fremont_dist_250917"
 export CONTAINER_CMD="podman"
 # ========== 0b) Podman 镜像本地 tar 加载配置 ==========
-# 镜像 tar 路径
+# 镜像 tar 包路径
 export IMAGE_TAR="/shared/data/FX2/rocm6.4.3_ubuntu22.04_py3.10_pytorch_2.8.0_ck_fa3_fremont_dist_250917.tar"
 export CHECK_IMAGE="${CHECK_IMAGE:-1}"
 
@@ -87,7 +87,7 @@ printf "%s\n" "${HOST_IPS[@]}" > "$IPS_FILE"
 export NCCL_DEBUG="${NCCL_DEBUG:-INFO}"
 export NCCL_IB_HCA="${NCCL_IB_HCA:-bnxt_re0,bnxt_re1,bnxt_re2,bnxt_re3,bnxt_re4,bnxt_re5,bnxt_re7,bnxt_re8}"
 export NCCL_IB_QPS_PER_CONNECTION="${NCCL_IB_QPS_PER_CONNECTION:-8}"
-export NCCL_IB_TIMEOUT="${NCCL_IB_TIMEOUT:-22}"
+export NCCL_IB_TIMEOUT="${NCCL_IB_TIMEOUT:-23}"
 export NCCL_IB_DISABLE="${NCCL_IB_DISABLE:-0}"
 export NCCL_IB_RETRY_CNT="${NCCL_IB_RETRY_CNT:-15}"
 export NCCL_NVLS_ENABLE="${NCCL_NVLS_ENABLE:-0}"
@@ -222,6 +222,7 @@ srun --kill-on-bad-exit=1  bash -c '
     --device=/dev/kfd \
     --device=/dev/dri \
     ${EXTRA_DEVICES} \
+    --cap-add=IPC_LOCK \
     --ipc=host \
     --network=host \
     --ulimit memlock=-1:-1 \
@@ -236,6 +237,7 @@ srun --kill-on-bad-exit=1  bash -c '
     -e NCCL_DEBUG="$NCCL_DEBUG" \
     -e NCCL_SOCKET_IFNAME="$NIC" \
     $( [ "$SET_GLOO" -eq 1 ] && echo -e "-e GLOO_SOCKET_IFNAME=$NIC" ) \
+    -e RDMAV_HUGEPAGES_SAFE=1 \
     -e NCCL_IB_HCA="$NCCL_IB_HCA" \
     -e NCCL_IB_QPS_PER_CONNECTION="$NCCL_IB_QPS_PER_CONNECTION" \
     -e NCCL_IB_TIMEOUT="$NCCL_IB_TIMEOUT" \
