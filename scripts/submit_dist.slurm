@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=mi325x-dist-train-example
 #SBATCH --output=logs/slurm/mi325x-dist.%j.out
-#SBATCH --nodelist=gpu-18,gpu-9,gpu-22
+#SBATCH --nodelist=gpu-9,gpu-22
 #SBATCH --gres=gpu:8
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=256
@@ -24,9 +24,6 @@ export CONTAINER_CMD="podman"
 # 镜像 tar 路径
 export IMAGE_TAR="/shared/data/FX2/rocm6.4.3_ubuntu22.04_py3.10_pytorch_2.8.0_ck_fa3_fremont_dist_250917.tar"
 export CHECK_IMAGE="${CHECK_IMAGE:-1}"
-
-
-
 
 # docker 下传递 data, models 等目录软连接
 export WORKDIR="$HOME"
@@ -96,12 +93,11 @@ export NCCL_IB_RETRY_CNT="${NCCL_IB_RETRY_CNT:-15}"
 export NCCL_NVLS_ENABLE="${NCCL_NVLS_ENABLE:-0}"
 export NCCL_IB_GID_INDEX="${NCCL_IB_GID_INDEX:-3}"
 
-# export FIXED_NIC="${FIXED_NIC:-enp49s0f1np1}" # lmx5
+# export FIXED_NIC="${FIXED_NIC:-enp49s0f1np1}" # MLX5
 export FIXED_NIC="${FIXED_NIC:-enp49s0f0np0}"  # ROCE (默认)
 
 
 # ========== 5.6) 在所有节点上检查镜像 tag；若不存在则从本地 tar 加载 ==========
-# ========== 5.6) 在所有节点上检查镜像 tag；若不存在则仅从本地 tar 加载（无回退拉取） ==========
 if [ "${CONTAINER_CMD}" = "podman" ] && [ "${CHECK_IMAGE}" -eq 1 ]; then
   echo "开始在所有节点上检查镜像：${DOCKER_IMAGE}；若不存在，仅从本地 tar 加载：${IMAGE_TAR}"
   export DOCKER_IMAGE IMAGE_TAR CONTAINER_CMD
@@ -213,6 +209,9 @@ srun --kill-on-bad-exit=1  bash -c '
   EXTRA_DEVICES=""
   [ -d /dev/infiniband ] && EXTRA_DEVICES+=" --device=/dev/infiniband"
 
+  echo "Stopping all running containers..."
+  $CONTAINER_CMD stop $($CONTAINER_CMD ps -q) 2>/dev/null || true
+  echo "Remove duplicated containers..."
   $CONTAINER_CMD rm -f "$DOCKER_NAME" >/dev/null 2>&1 || true
 
   $CONTAINER_CMD run --rm \
@@ -223,8 +222,8 @@ srun --kill-on-bad-exit=1  bash -c '
     --device=/dev/kfd \
     --device=/dev/dri \
     ${EXTRA_DEVICES} \
+    --ipc=host \
     --network=host \
-    --shm-size=128g \
     --ulimit memlock=-1:-1 \
     -v "$WORKDIR":"$WORKDIR" \
     -v "$HOME":/workdir \
@@ -264,7 +263,7 @@ srun --kill-on-bad-exit=1  bash -c '
       echo \"安装项目依赖...\"
       rm -rf build/ dist/ ./*.egg-info || true
       python3 -m pip install -U pip
-      python3 -m pip install typeguard tyro
+      python3 -m pip install typeguard tyro modelscope
       python3 -m pip install -e .
 
       echo \"节点 \$NODE_RANK: 开始训练 - 主节点: \$MASTER_ADDR:\$MASTER_PORT\"
