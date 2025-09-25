@@ -11,5 +11,6 @@ modelscope
 ftfy
 pynvml
 pandas
+deepspeed
 accelerate
 peft

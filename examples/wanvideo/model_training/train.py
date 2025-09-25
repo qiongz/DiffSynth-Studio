@@ -4,9 +4,26 @@ from diffsynth.pipelines.wan_video_new import WanVideoPipeline, ModelConfig
 from diffsynth.trainers.utils import DiffusionTrainingModule, ModelLogger, launch_training_task, wan_parser
 from diffsynth.trainers.unified_dataset import UnifiedDataset
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import os
+import random
+import numpy as np
+import torch
 
-
-
+def set_fixed_seed(seed=None):
+    #setting seed for random/numpy/torch(device='cpu')
+    if seed is None:
+        seed_str = os.environ.get('REPRODUCE_SEED')
+        if seed_str is None:
+            return 
+        try:
+            seed = int(seed_str)
+        except ValueError:
+            raise ValueError(f"ENV REPRODUCE_SEED should be an integer, current value: '{seed_str}'")
+    
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    
 class WanTrainingModule(DiffusionTrainingModule):
     def __init__(
         self,
@@ -92,6 +109,7 @@ class WanTrainingModule(DiffusionTrainingModule):
 if __name__ == "__main__":
     parser = wan_parser()
     args = parser.parse_args()
+    set_fixed_seed(args.seed)  # add reproduce seed
     dataset = UnifiedDataset(
         base_path=args.dataset_base_path,
         metadata_path=args.dataset_metadata_path,
