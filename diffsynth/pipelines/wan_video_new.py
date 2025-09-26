@@ -1,5 +1,6 @@
 import torch, warnings, glob, os, types
 import numpy as np
+import torch, random
 from PIL import Image
 from einops import repeat, reduce
 from typing import Optional, Union
@@ -26,7 +27,30 @@ from ..prompters import WanPrompter
 from ..vram_management import enable_vram_management, AutoWrappedModule, AutoWrappedLinear, WanAutoCastLayerNorm
 from ..lora import GeneralLoRALoader
 
+import random, torch
+print("To Reproduce training: export REPRODUCE_SEED=10007")
+def get_env_seed():
+    seed_str = os.environ.get('REPRODUCE_SEED')
+    if seed_str is None:
+        return None
+    try:
+        seed = int(seed_str)
+    except ValueError:
+        raise ValueError(f"ENV REPRODUCE_SEED should be an integer, current value: '{seed_str}'")
+    return seed
 
+def set_global_seed():
+    #setting seed for random/numpy/torch(device='cpu')
+    seed = get_env_seed()
+    if seed is None:
+        return
+
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+set_global_seed()
 
 class WanVideoPipeline(BasePipeline):
 
@@ -80,7 +104,7 @@ class WanVideoPipeline(BasePipeline):
     def training_loss(self, **inputs):
         max_timestep_boundary = int(inputs.get("max_timestep_boundary", 1) * self.scheduler.num_train_timesteps)
         min_timestep_boundary = int(inputs.get("min_timestep_boundary", 0) * self.scheduler.num_train_timesteps)
-        timestep_id = torch.randint(min_timestep_boundary, max_timestep_boundary, (1,))
+        timestep_id = torch.randint(min_timestep_boundary, max_timestep_boundary, (1,), device='cpu')
         timestep = self.scheduler.timesteps[timestep_id].to(dtype=self.torch_dtype, device=self.device)
         
         inputs["latents"] = self.scheduler.add_noise(inputs["input_latents"], inputs["noise"], timestep)
@@ -317,7 +341,7 @@ class WanVideoPipeline(BasePipeline):
         model_configs: list[ModelConfig] = [],
         tokenizer_config: ModelConfig = ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/*"),
         audio_processor_config: ModelConfig = None,
-        redirect_common_files: bool = True,
+        redirect_common_files: bool = False,
         use_usp=False,
     ):
         # Redirect model path
@@ -536,7 +560,8 @@ class WanVideoUnit_NoiseInitializer(PipelineUnit):
         if vace_reference_image is not None:
             length += 1
         shape = (1, pipe.vae.model.z_dim, length, height // pipe.vae.upsampling_factor, width // pipe.vae.upsampling_factor)
-        noise = pipe.generate_noise(shape, seed=seed, rand_device=rand_device)
+        seed = get_env_seed()
+        noise = pipe.generate_noise(shape, seed=seed, rand_device='cpu')
         if vace_reference_image is not None:
             noise = torch.concat((noise[:, :, -1:], noise[:, :, :-1]), dim=2)
         return {"noise": noise}
