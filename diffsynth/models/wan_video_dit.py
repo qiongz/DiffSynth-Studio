@@ -19,6 +19,12 @@ except ModuleNotFoundError:
     FLASH_ATTN_2_AVAILABLE = False
 
 try:
+    import aiter
+    AITER_FLASH_ATTN_2_AVAILABLE = True
+except ModuleNotFoundError:
+    AITER_FLASH_ATTN_2_AVAILABLE = False
+
+try:
     from sageattention import sageattn
     SAGE_ATTN_AVAILABLE = True
 except ModuleNotFoundError:
@@ -39,6 +45,41 @@ def flash_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, num_heads
         x = flash_attn_interface.flash_attn_func(q, k, v)
         if isinstance(x,tuple):
             x = x[0]
+        x = rearrange(x, "b s n d -> b s (n d)", n=num_heads)
+    elif AITER_FLASH_ATTN_2_AVAILABLE:
+        window_size=(-1, -1)
+        softmax_scale=None
+        causal=False
+        return_lse=True
+        deterministic=False
+        dropout_p=0
+        b, lq, lk, out_dtype = q.size(0), q.size(1), k.size(1), q.dtype
+        q = rearrange(q, "b s (n d) -> b s n d", n=num_heads).flatten(0,1)
+        k = rearrange(k, "b s (n d) -> b s n d", n=num_heads).flatten(0,1)
+        v = rearrange(v, "b s (n d) -> b s n d", n=num_heads).flatten(0,1)
+        q_lens = torch.tensor(
+            [lq] * b, dtype=torch.int32).to(
+                device=q.device, non_blocking=True)
+        k_lens = torch.tensor(
+            [lk] * b, dtype=torch.int32).to(
+                device=k.device, non_blocking=True)
+        x, _ = aiter.flash_attn_varlen_func(
+            q=q,
+            k=k,
+            v=v,
+            cu_seqlens_q=torch.cat([q_lens.new_zeros([1]), q_lens]).cumsum(
+                0, dtype=torch.int32).to(q.device, non_blocking=True),
+            cu_seqlens_k=torch.cat([k_lens.new_zeros([1]), k_lens]).cumsum(
+                0, dtype=torch.int32).to(q.device, non_blocking=True),
+            max_seqlen_q=lq,
+            max_seqlen_k=lk,
+            dropout_p=dropout_p,
+            softmax_scale=softmax_scale,
+            causal=causal,
+            window_size=window_size,
+            return_lse=return_lse,
+            deterministic=deterministic)
+        x = x.unflatten(0, (b, lq))
         x = rearrange(x, "b s n d -> b s (n d)", n=num_heads)
     elif FLASH_ATTN_2_AVAILABLE:
         q = rearrange(q, "b s (n d) -> b s n d", n=num_heads)
