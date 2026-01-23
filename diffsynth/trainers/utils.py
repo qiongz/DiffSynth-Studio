@@ -9,9 +9,11 @@ from accelerate import Accelerator
 from accelerate.utils import DistributedDataParallelKwargs
 from torch.utils.data.distributed import DistributedSampler
 from safetensors.torch import save_file
+import torch
 import deepspeed
 import numpy as np
 import random
+import time
 
 
 class ImageDataset(torch.utils.data.Dataset):
@@ -556,7 +558,7 @@ def launch_training_task(
     optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
 
-    # using deepspeed to support multi-nodes training
+    # using deepspeed to support multi-nodes training on AAC (distributed launch)
     deepspeed.init_distributed()
     dataset_sampler = DistributedSampler(
         dataset,
@@ -564,14 +566,62 @@ def launch_training_task(
         seed=args.seed,
         drop_last=True
     )
-    dataloader = torch.utils.data.DataLoader(dataset, sampler=dataset_sampler, collate_fn=lambda x: x[0], num_workers=num_workers)
+    dataloader = torch.utils.data.DataLoader(
+                      dataset, 
+                      sampler=dataset_sampler, 
+                      collate_fn=lambda x: x[0], 
+                      num_workers=num_workers,
+                      pin_memory=True,
+                      persistent_workers=True,
+                      prefetch_factor=4
+                      )
     model_engine, optimizer, _, _ = deepspeed.initialize(args = args, model = model, model_parameters = model.parameters(), optimizer = optimizer, lr_scheduler=scheduler)
+    # warmups 
+    for idx, data in enumerate(dataloader):
+        loss = model_engine(data)
+        model_engine.backward(loss)
+        #model_engine.step()
+        if idx >= args.warmup_steps:
+            dataloader.sampler.set_epoch(0)
+            break
+
+    f_start = torch.cuda.Event(enable_timing=True); f_end = torch.cuda.Event(enable_timing=True)
+    b_start = torch.cuda.Event(enable_timing=True); b_end = torch.cuda.Event(enable_timing=True)
+    o_start = torch.cuda.Event(enable_timing=True); o_end = torch.cuda.Event(enable_timing=True)
+    fwd_s, bwd_s, opt_s = 0, 0, 0
+    if args.local_rank==0:
+        print("finished warmups, start training") 
     for epoch_id in range(num_epochs):
-        for data in tqdm(dataloader):
+        for idx, data in enumerate(tqdm(dataloader)):
+            t_start = time.perf_counter()
+            f_start.record()
             loss = model_engine(data)
+            f_end.record()
+            b_start.record()
             model_engine.backward(loss)
+            b_end.record()
+            o_start.record()
             model_engine.step()
+            o_end.record()
+            loss_cpu = loss.detach().cpu()  # rank-0 loss
+            torch.cuda.synchronize()
+            fwd_s = f_start.elapsed_time(f_end) / 1000.0
+            bwd_s = b_start.elapsed_time(b_end) / 1000.0
+            opt_s = o_start.elapsed_time(o_end) / 1000.0
+            iter_s = fwd_s+bwd_s+opt_s
+            e2e_s = (time.perf_counter() - t_start)
+            if args.local_rank==0:
+                print(
+                  f"local_rank: {args.local_rank}, "
+                  f"loss: {loss}, "
+                  f"fwd_s={fwd_s:.3f}, "
+                  f"bwd_s={bwd_s:.3f}, "
+                  f"opt_s={opt_s:.3f}, "
+                  f"iter_s={iter_s:.3f}, "
+                  f"e2e_s={e2e_s:.3f}, "
+                )
             model_logger.on_step_end(model_engine, save_steps)
+        dataloader.sampler.set_epoch(epoch_id)
         if save_steps is None:
             model_logger.on_epoch_end(model_engine, epoch_id)
     
@@ -615,6 +665,7 @@ def wan_parser():
     parser.add_argument("--model_paths", type=str, default=None, help="Paths to load models. In JSON format.")
     parser.add_argument("--model_id_with_origin_paths", type=str, default=None, help="Model ID with origin paths, e.g., Wan-AI/Wan2.1-T2V-1.3B:diffusion_pytorch_model*.safetensors. Comma-separated.")
     parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate.")
+    parser.add_argument("--warmup_steps", type=int, default=10, help="warmup_steps")
     parser.add_argument("--num_epochs", type=int, default=1, help="Number of epochs.")
     parser.add_argument("--output_path", type=str, default="./models", help="Output save path.")
     parser.add_argument("--remove_prefix_in_ckpt", type=str, default="pipe.dit.", help="Remove prefix in ckpt.")
@@ -631,7 +682,7 @@ def wan_parser():
     parser.add_argument("--min_timestep_boundary", type=float, default=0.0, help="Min timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
     parser.add_argument("--find_unused_parameters", default=False, action="store_true", help="Whether to find unused parameters in DDP.")
     parser.add_argument("--save_steps", type=int, default=None, help="Number of checkpoint saving invervals. If None, checkpoints will be saved every epoch.")
-    parser.add_argument("--dataset_num_workers", type=int, default=0, help="Number of workers for data loading.")
+    parser.add_argument("--dataset_num_workers", type=int, default=8, help="Number of workers for data loading.")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay.")
     parser.add_argument('--seed', type=int, default=10007, required=False, help='seed for torch/random/numpy rng')
     parser.add_argument('--local_rank', type=int, default=-1,
