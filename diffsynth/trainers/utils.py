@@ -557,74 +557,114 @@ def launch_training_task(
     
     optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
-
     # using deepspeed to support multi-nodes training on AAC (distributed launch)
     deepspeed.init_distributed()
+    rank = deepspeed.comm.get_rank()
+    world_size = deepspeed.comm.get_world_size()
+    local_rank = getattr(args, "local_rank", 0)
+    show_bar = (local_rank == 0)
     dataset_sampler = DistributedSampler(
-        dataset,
+        dataset=dataset,
+        num_replicas=world_size,
+        rank=rank,
         shuffle=True,
-        seed=args.seed,
-        drop_last=True
+        seed=getattr(args, "seed", 10007),
+        drop_last=True,
     )
+
+    # TODO: optimize collate_fn 
     dataloader = torch.utils.data.DataLoader(
                       dataset, 
                       sampler=dataset_sampler, 
-                      collate_fn=lambda x: x[0], 
+                      collate_fn=lambda x: x[0],  # not efficient, to be optimized
                       num_workers=num_workers,
                       pin_memory=True,
-                      persistent_workers=True,
-                      prefetch_factor=4
+                      persistent_workers=True, # if num_epochs>1
+                      prefetch_factor=4 if num_workers > 0 else None
                       )
     model_engine, optimizer, _, _ = deepspeed.initialize(args = args, model = model, model_parameters = model.parameters(), optimizer = optimizer, lr_scheduler=scheduler)
-    # warmups 
-    for idx, data in enumerate(dataloader):
-        loss = model_engine(data)
-        model_engine.backward(loss)
-        #model_engine.step()
-        if idx >= args.warmup_steps:
-            dataloader.sampler.set_epoch(0)
-            break
+    warmup_steps = int(getattr(args, "warmup_steps", 0) or 0)
+
+    if warmup_steps > 0:
+        it = 0
+        for batch in tqdm(dataloader, disable=not show_bar, dynamic_ncols=True, leave=True):
+            loss = model_engine(batch)
+            model_engine.backward(loss)
+            model_engine.zero_grad()
+            it += 1
+            if it >= warmup_steps:
+                break
+        dataset_sampler.set_epoch(0)
 
     f_start = torch.cuda.Event(enable_timing=True); f_end = torch.cuda.Event(enable_timing=True)
     b_start = torch.cuda.Event(enable_timing=True); b_end = torch.cuda.Event(enable_timing=True)
     o_start = torch.cuda.Event(enable_timing=True); o_end = torch.cuda.Event(enable_timing=True)
-    fwd_s, bwd_s, opt_s = 0, 0, 0
-    if args.local_rank==0:
-        print("finished warmups, start training") 
-    for epoch_id in range(num_epochs):
-        for idx, data in enumerate(tqdm(dataloader)):
-            t_start = time.perf_counter()
-            f_start.record()
-            loss = model_engine(data)
-            f_end.record()
-            b_start.record()
-            model_engine.backward(loss)
-            b_end.record()
-            o_start.record()
-            model_engine.step()
-            o_end.record()
-            loss_cpu = loss.detach().cpu()  # rank-0 loss
-            torch.cuda.synchronize()
-            fwd_s = f_start.elapsed_time(f_end) / 1000.0
-            bwd_s = b_start.elapsed_time(b_end) / 1000.0
-            opt_s = o_start.elapsed_time(o_end) / 1000.0
-            iter_s = fwd_s+bwd_s+opt_s
-            e2e_s = (time.perf_counter() - t_start)
-            if args.local_rank==0:
-                print(
-                  f"local_rank: {args.local_rank}, "
-                  f"loss: {loss}, "
-                  f"fwd_s={fwd_s:.3f}, "
-                  f"bwd_s={bwd_s:.3f}, "
-                  f"opt_s={opt_s:.3f}, "
-                  f"iter_s={iter_s:.3f}, "
-                  f"e2e_s={e2e_s:.3f}, "
-                )
-            model_logger.on_step_end(model_engine, save_steps)
-        dataloader.sampler.set_epoch(epoch_id)
-        if save_steps is None:
-            model_logger.on_epoch_end(model_engine, epoch_id)
-    
+    try:
+        for epoch_id in range(num_epochs):
+            dataset_sampler.set_epoch(epoch_id)
+            pbar = tqdm(dataloader, disable=not show_bar, dynamic_ncols=True, leave=True)
+            for step, batch in enumerate(pbar):
+                t_start = time.perf_counter()
+
+                f_start.record()
+                loss = model_engine(batch)
+                f_end.record()
+
+                b_start.record()
+                model_engine.backward(loss)
+                b_end.record()
+
+                o_start.record()
+                model_engine.step()
+                o_end.record()
+
+                torch.cuda.synchronize()
+
+                fwd_s = f_start.elapsed_time(f_end) / 1000.0
+                bwd_s = b_start.elapsed_time(b_end) / 1000.0
+                opt_s = o_start.elapsed_time(o_end) / 1000.0
+                iter_s = fwd_s + bwd_s + opt_s
+                e2e_s = time.perf_counter() - t_start
+
+                if show_bar:
+                    loss_item = float(loss.detach().cpu().item())
+                    pbar.set_postfix({
+                        "loss": f"{loss_item:.4f}",
+                        "fwd_s": f"{fwd_s:.3f}",
+                        "bwd_s": f"{bwd_s:.3f}",
+                        "opt_s": f"{opt_s:.3f}",
+                        "iter_s": f"{iter_s:.3f}",
+                        "e2e_s": f"{e2e_s:.3f}",
+                    })
+                    # print for all ranks, tee logs for analysis
+                    print(
+                        f"local_rank: {local_rank}, "
+                        f"loss: {loss_item:.6f}, "
+                        f"fwd_s={fwd_s:.3f}, "
+                        f"bwd_s={bwd_s:.3f}, "
+                        f"opt_s={opt_s:.3f}, "
+                        f"iter_s={iter_s:.3f}, "
+                        f"e2e_s={e2e_s:.3f},"
+                    )
+
+                model_logger.on_step_end(model_engine, save_steps)
+
+            if save_steps is None:
+                model_logger.on_epoch_end(model_engine, epoch_id)
+
+        if deepspeed.comm.is_initialized():
+            deepspeed.comm.barrier()
+
+    finally:
+        # cleaning 
+        try:
+            if deepspeed.comm.is_initialized():
+                deepspeed.comm.destroy_process_group()
+        except Exception:
+            pass
+        # restore tty for interactive terminal
+        os.system('stty sane; tput cnorm')
+
 
 
 def launch_data_process_task(

@@ -5,7 +5,16 @@
 ## Quickstart
 
 ```bash
-# 1) 准备本地模型权重（见下文“Model Assets”）
+# 0) Installation 
+git clone https://github.com/modelscope/DiffSynth-Studio.git
+cd DiffSynth-Studio
+pip install -e .
+
+# 1) Prepare Datasets & Models
+## dataset 
+modelscope download --dataset DiffSynth-Studio/example_video_dataset --local_dir ./data/example_video_dataset
+## Models
+(checkout "Model Asset" )
 
 # 2) （可选）指定要跑的模型清单（与 configs/*.yaml 文件名一致，不含 .yaml）
 cat > available_models.txt << 'EOF'

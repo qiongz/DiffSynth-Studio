@@ -118,9 +118,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="One-click runner for WanVideo models with YAML configs (tee logs)."
     )
-    parser.add_argument("--configs-dir", type=str, default="configs",
-                        help="Directory containing per-model YAML configs.")
-    parser.add_argument("--available-list", type=str, default="available_models.txt",
+    parser.add_argument("--configs-dir", type=str, default="benchmarking/configs",
+                        help="Directory containing per-model YAML configs, For H200, please switch to configs_H200 to avoid OOM for some cases")
+    parser.add_argument("--available-list", type=str, default="benchmarking/available_models.txt",
                         help="Optional file to restrict which models to run (one per line, matching YAML filename).")
     parser.add_argument("--machine", type=str, default="",
                         choices=["", "H200", "MI325X"],

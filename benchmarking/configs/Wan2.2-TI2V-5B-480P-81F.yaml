@@ -17,7 +17,7 @@ seed: 10007
 extra_inputs: "input_image"
 
 deepspeed: true
-deepspeed_config: "examples/wanvideo/model_training/full/deepspeed_stage1_config.json"
+deepspeed_config: benchmarking/ds_configs/stage1_config.json
 
 use_gradient_checkpointing: false
 use_gradient_checkpointing_offload: false

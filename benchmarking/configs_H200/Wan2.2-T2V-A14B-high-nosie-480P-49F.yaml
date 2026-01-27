@@ -20,5 +20,5 @@ min_timestep_boundary: 0
 deepspeed: true
 deepspeed_config: benchmarking/ds_configs/stage1_config.json
 
-use_gradient_checkpointing: false
+use_gradient_checkpointing: true
 use_gradient_checkpointing_offload: false

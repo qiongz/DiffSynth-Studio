@@ -19,7 +19,7 @@ max_timestep_boundary: 0.358
 min_timestep_boundary: 0
 
 deepspeed: true
-deepspeed_config: "examples/wanvideo/model_training/full/deepspeed_stage1_config.json"
+deepspeed_config: benchmarking/ds_configs/stage1_config.json
 
 use_gradient_checkpointing: true
 use_gradient_checkpointing_offload: false
