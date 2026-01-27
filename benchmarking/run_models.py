@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Tuple
 
 BOOLEAN_FLAG_ALIASES = {
     "use_gradient_checkpointing": "use_gradient_checkpointing",
-    "use_gradient_checkpointing_offload": "use_gradient-checkpointing_offload",
+    "use_gradient_checkpointing_offload": "use_gradient_checkpointing_offload",
     "deepspeed": "deepspeed",
 }
 
