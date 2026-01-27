@@ -294,7 +294,7 @@ def write_summary_main(
 
     # 写 Markdown
     md_lines: List[str] = []
-    md_lines.append("| Model | MI325X vs. H200 | MI325X e2e_s (s/iter) | H200 e2e_s (s/iter) | Notes |")
+    md_lines.append("| Model | MI325X vs. H200 (Perf) | MI325X e2e_s (s/iter) | H200 e2e_s (s/iter) | Notes |")
     md_lines.append("|---|---:|---:|---:|---|")
     md_lines.extend(rows_for_md)
     summary_md.write_text("\n".join(md_lines), encoding="utf-8")
@@ -359,11 +359,11 @@ def main():
     ap.add_argument("--last-n", type=int, default=5, help="Median of last N e2e points per log (if fewer, use all)")
     ap.add_argument("--prefer-gpus", type=int, nargs="+", default=[8, 1],
                     help="Order of GPU counts to prefer when selecting one run per machine for the main summary; e.g., --prefer-gpus 8 1")
-    ap.add_argument("--raw-csv", type=str, default="e2e_raw_points.csv", help="Raw points CSV")
-    ap.add_argument("--summary-csv", type=str, default="e2e_summary.csv", help="Main summary CSV")
-    ap.add_argument("--summary-md", type=str, default="e2e_summary.md", help="Main summary Markdown")
-    ap.add_argument("--by-mg-csv", type=str, default="e2e_by_machine_gpu.csv", help="By (machine,gpu) CSV")
-    ap.add_argument("--by-mg-md", type=str, default="e2e_by_machine_gpu.md", help="By (machine,gpu) Markdown")
+    ap.add_argument("--raw-csv", type=str, default="e2e_perf_raw_points.csv", help="Raw points CSV")
+    ap.add_argument("--summary-csv", type=str, default="e2e_perf_summary.csv", help="Main summary CSV")
+    ap.add_argument("--summary-md", type=str, default="e2e_perf_summary.md", help="Main summary Markdown")
+    ap.add_argument("--by-mg-csv", type=str, default="e2e_perf_by_machine_gpu.csv", help="By (machine,gpu) CSV")
+    ap.add_argument("--by-mg-md", type=str, default="e2e_perf_by_machine_gpu.md", help="By (machine,gpu) Markdown")
     args = ap.parse_args()
 
     log_root = Path(args.log_root)

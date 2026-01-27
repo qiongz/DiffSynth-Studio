@@ -1,8 +1,8 @@
-# DiffSynth‑Studio — One‑Click Benchmark & E2E Parser
+# DiffSynth‑Studio — Training Performance (Perf) One‑Click Runner & E2E Parser
 
 ---
 
-## Quickstart
+## Quickstart (Training Performance)
 
 ```bash
 # 0) Installation 
@@ -160,7 +160,7 @@ logs/
 
 ---
 
-## Parse & Compare（`parse_e2e_and_make_table.py`）
+## Parse & Compare（`parse_e2e_and_make_table.py`，训练性能对比）
 
 该脚本会**自动识别**以下目录形式：`logs/<MACHINE>` 与 `logs/<MACHINE>-<Ng>g`（如 `H200-8g`）。
 默认将**优先选择 8g** 结果作为主对比表数据（可通过 `--prefer-gpus` 调整顺序）。
@@ -217,41 +217,26 @@ Wan2.2-TI2V-5B-480P-81F
 
 ---
 
-## Sample Results（Placeholder, TBD with latest docker）
+## Training Performance Results
 
-> 跑完并执行解析脚本后，请以实际生成的 `e2e_summary.md` 与 `e2e_by_machine_gpu.md` 为准。
+> 跑完并执行解析脚本后，请以实际生成的 `e2e_perf_summary.md` 与 `e2e_perf_by_machine_gpu.md` 为准。
 
-**主对比表（示例）**：
+** 测试结果参考 **：
 
 ```markdown
-| Model | MI325X vs. H200 | MI325X e2e_s (s/iter) | H200 e2e_s (s/iter) | Notes |
+| Model | MI325X vs. H200 (Perf) | MI325X e2e_s (s/iter) | H200 e2e_s (s/iter) | Notes |
 |---|---:|---:|---:|---|
-| Wan2.1-T2V-1.3B-81F | NaN | NaN | NaN |  |
-| Wan2.1-T2V-14B-81F | NaN | NaN | NaN |  |
-| Wan2.1-I2V-14B-480P-81F | NaN | NaN | NaN |  |
-| Wan2.1-I2V-14B-720P-49F | NaN | NaN | NaN |  |
-| Wan2.1-I2V-14B-720P-121F | NaN | NaN | NaN |  |
-| Wan2.2-TI2V-5B-480P-81F | NaN | NaN | NaN |  |
-| Wan2.2-T2V-A14B-high-nosie-480P-49F | NaN | NaN | NaN |  |
-| Wan2.2-I2V-A14B-high-noise-480P-49F | NaN | NaN | NaN |  |
-| Wan2.2-I2V-A14B-high-noise-720P-161F | NaN | NaN | NaN |  |
+| Wan2.1-I2V-14B-480P-81F | 100% | 16.199 | 16.255 |  |
+| Wan2.1-I2V-14B-720P-121F | 124% | 110.692 | 137.195 |  |
+| Wan2.1-I2V-14B-720P-49F | 98% | 27.325 | 26.671 |  |
+| Wan2.1-T2V-1.3B-81F | 105% | 3.298 | 3.450 |  |
+| Wan2.1-T2V-14B-81F | 98% | 15.176 | 14.841 |  |
+| Wan2.2-I2V-A14B-high-noise-480P-49F | 99% | 16.138 | 16.054 |  |
+| Wan2.2-I2V-A14B-high-noise-720P-161F | 119% | 180.178 | 214.628 |  |
+| Wan2.2-T2V-A14B-high-nosie-480P-49F | 102% | 7.949 | 8.133 |  |
+| Wan2.2-TI2V-5B-480P-81F | 116% | 1.595 | 1.845 |  |
 ```
 
-**平台×GPU 概览（示例）**：
-
-```markdown
-| Model | H200-1g | H200-8g | MI325X-1g | MI325X-8g |
-|---|---:|---:|---:|---:|
-| Wan2.1-T2V-1.3B-81F | NaN | NaN | NaN | NaN |
-| Wan2.1-T2V-14B-81F | NaN | NaN | NaN | NaN |
-| Wan2.1-I2V-14B-480P-81F | NaN | NaN | NaN | NaN |
-| Wan2.1-I2V-14B-720P-49F | NaN | NaN | NaN | NaN |
-| Wan2.1-I2V-14B-720P-121F | NaN | NaN | NaN | NaN |
-| Wan2.2-TI2V-5B-480P-81F | NaN | NaN | NaN | NaN |
-| Wan2.2-T2V-A14B-high-nosie-480P-49F | NaN | NaN | NaN | NaN |
-| Wan2.2-I2V-A14B-high-noise-480P-49F | NaN | NaN | NaN | NaN |
-| Wan2.2-I2V-A14B-high-noise-720P-161F | NaN | NaN | NaN | NaN |
-```
 
 ---
 
