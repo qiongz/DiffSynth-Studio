@@ -1,0 +1,23 @@
+model_name: Wan2.2-II2V-5B-480P-81F
+
+dataset_base_path: data/example_video_dataset
+dataset_metadata_path: data/example_video_dataset/metadata.csv
+height: 480
+width: 832
+num_frames: 81
+dataset_repeat: 128
+warmup_steps: 3
+model_id_with_origin_paths: "Wan-AI/Wan2.2-TI2V-5B:diffusion_pytorch_model*.safetensors,Wan-AI/Wan2.2-TI2V-5B:models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.2-TI2V-5B:Wan2.2_VAE.pth" 
+learning_rate: 1e-5
+num_epochs: 1
+remove_prefix_in_ckpt: "pipe.dit."
+output_path: "./models/train/Wan2.2-II2V-5B-480P-81F_full"
+trainable_models: "dit"
+seed: 10007
+extra_inputs: "input_image"
+
+deepspeed: true
+deepspeed_config: "examples/wanvideo/model_training/full/deepspeed_stage1_config.json"
+
+use_gradient_checkpointing: false
+use_gradient_checkpointing_offload: false
