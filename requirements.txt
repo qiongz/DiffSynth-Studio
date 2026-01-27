@@ -1,6 +1,4 @@
-torch>=2.0.0
-torchvision
-transformers
+transformers==4.55.0
 imageio
 imageio[ffmpeg]
 safetensors
