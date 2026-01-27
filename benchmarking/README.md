@@ -127,6 +127,7 @@ python3 benchmarking/run_models.py --machine H200  --gpus 8 --configs-dir benchm
 # 在 MI325X 上顺序跑 1g 与 8g
 cd DiffSynth-Studio
 python3 benchmarking/run_models.py --machine MI325X --gpus 1 8 --configs-dir benchmarking/configs --available-list benchmarking/available_models.txt
+
 ```
 
 ###  Arguments
@@ -221,9 +222,8 @@ Wan2.2-TI2V-5B-480P-81F
 
 > 跑完并执行解析脚本后，请以实际生成的 `e2e_perf_summary.md` 与 `e2e_perf_by_machine_gpu.md` 为准。
 
-** 测试结果参考 **：
+** 测试结果参考 **
 
-```markdown
 | Model | MI325X vs. H200 (Perf) | MI325X e2e_s (s/iter) | H200 e2e_s (s/iter) | Notes |
 |---|---:|---:|---:|---|
 | Wan2.1-I2V-14B-480P-81F | 100% | 16.199 | 16.255 |  |
@@ -235,32 +235,12 @@ Wan2.2-TI2V-5B-480P-81F
 | Wan2.2-I2V-A14B-high-noise-720P-161F | 119% | 180.178 | 214.628 |  |
 | Wan2.2-T2V-A14B-high-nosie-480P-49F | 102% | 7.949 | 8.133 |  |
 | Wan2.2-TI2V-5B-480P-81F | 116% | 1.595 | 1.845 |  |
-```
 
 
----
+### Docker Versions
 
-## Reproducibility Checklist
-
-- 固定 `--seed`、`num_epochs`、`dataset_repeat`、分辨率和帧数在两平台一致。  
-- 使用同一份数据与 `deepspeed_config`。  
-- 保持 `trainable_models` / `remove_prefix_in_ckpt` 等核心参数一致。  
-- 训练 warmup 阶段如不 `step()`，请在每次 backward 后 `model_engine.zero_grad()`，避免显存累积。
-
----
-
-## Troubleshooting
-
-- **OOM / 内存不足**：解析脚本会标记并将该侧 e2e 视为 NaN。  
-- **tqdm 的 `^M`**：解析脚本通过正则提取 `e2e_s=...`，无需手动清洗。  
-- **日志未被识别**：确保存在 `train.log`；否则脚本会尝试 `*.log` 与 `*.txt` 文件。  
-- **1g/8g 同时展示**：使用本解析脚本的“平台×GPU”明细输出（`e2e_by_machine_gpu.*`）。
-
----
-
-## License / Notes
-
-- 此流程用于内部性能对比与实验复现，请勿外传模型权重与敏感数据。  
-- 新增模型：在 `configs/` 下新增 YAML 并（可选）加入 `available_models.txt`。
-
+| System | docker | FA-version| 
+| :---: | :---: | :---: |
+| MI325X| amdagi/rocm_pytorch-training:v25.11 | FA2 (aiter-v0.1.9)|
+| H200 | nvcr.io/nvidia/pytorch:25.12-py3 | FA3-hopper|
 
