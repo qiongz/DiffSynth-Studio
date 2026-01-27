@@ -173,20 +173,20 @@ python3 parse_e2e_and_make_table.py \
   --log-root logs \
   --prefer-gpus 8 1 \
   --last-n 5 \
-  --raw-csv e2e_raw_points.csv \
-  --summary-csv e2e_summary.csv \
-  --summary-md e2e_summary.md \
-  --by-mg-csv e2e_by_machine_gpu.csv \
-  --by-mg-md e2e_by_machine_gpu.md
+  --raw-csv e2e_perf_raw_points.csv \
+  --summary-csv e2e_perf_summary.csv \
+  --summary-md e2e_perf_summary.md \
+  --by-mg-csv e2e_perf_by_machine_gpu.csv \
+  --by-mg-md e2e_perf_by_machine_gpu.md
 ```
 
 ### Outputs
 
-- `e2e_raw_points.csv`：每个日志文件的 e2e 序列与中位数（最后 N 个样本，默认 N=5）。  
-- `e2e_summary.csv`：主对比表（每平台为每个模型选定一条结果，默认优先 8g）。  
-- `e2e_summary.md`：主对比表（Markdown）。**相对性能定义**：`MI325X vs. H200 (%) = (H200_e2e / MI325X_e2e) * 100`。e2e 是耗时，越小越好，故 **>100% 表示 MI325X 更快**。  
-- `e2e_by_machine_gpu.csv`：平台×GPU 数的长表（含所有可用组合）。  
-- `e2e_by_machine_gpu.md`：平台×GPU 数概览表（Markdown）。
+- `e2e_perf_raw_points.csv`：每个日志文件的 e2e 序列与中位数（最后 N 个样本，默认 N=5）。  
+- `e2e_perf_summary.csv`：主对比表（每平台为每个模型选定一条结果，默认优先 8g）。  
+- `e2e_perf_summary.md`：主对比表（Markdown）。**相对性能定义**：`MI325X vs. H200 (%) = (H200_e2e / MI325X_e2e) * 100`。e2e 是耗时，越小越好，故 **>100% 表示 MI325X 更快**。  
+- `e2e_perf_by_machine_gpu.csv`：平台×GPU 数的长表（含所有可用组合）。  
+- `e2e_perf_by_machine_gpu.md`：平台×GPU 数概览表（Markdown）。
 
 ---
 
@@ -237,10 +237,10 @@ Wan2.2-TI2V-5B-480P-81F
 | Wan2.2-TI2V-5B-480P-81F | 116% | 1.595 | 1.845 |  |
 
 
-### Docker Versions
+### Docker Version
 
 | System | docker | FA-version| 
-| :---: | :---: | :---: |
+| :--- | :--- | :--- |
 | MI325X| amdagi/rocm_pytorch-training:v25.11 | FA2 (aiter-v0.1.9)|
 | H200 | nvcr.io/nvidia/pytorch:25.12-py3 | FA3-hopper|
 
