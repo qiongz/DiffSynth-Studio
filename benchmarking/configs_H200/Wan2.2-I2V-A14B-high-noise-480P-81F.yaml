@@ -1,4 +1,4 @@
-model_name: Wan2.2-I2V-A14B-high-noise-480P-49F
+model_name: Wan2.2-I2V-A14B-high-noise-480P-81F
 
 dataset_base_path: data/example_video_dataset
 dataset_metadata_path: data/example_video_dataset/metadata.csv
@@ -11,7 +11,7 @@ model_id_with_origin_paths: "Wan-AI/Wan2.2-I2V-A14B:high_noise_model/diffusion_p
 learning_rate: 1e-5
 num_epochs: 1
 remove_prefix_in_ckpt: "pipe.dit."
-output_path: "./models/train/Wan2.2-I2V-A14B-high-noise-480P-49F_full"
+output_path: "./models/train/Wan2.2-I2V-A14B-high-noise-480P-81F_full"
 trainable_models: "dit"
 seed: 10007
 extra_inputs: "input_image"
