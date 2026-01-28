@@ -173,7 +173,7 @@ def main():
             continue
 
         cfg = load_yaml(yaml_path) or {}
-        model_name = cfg.get("name", model)
+        model_name = cfg.get("model_name", model)
         if "output_path" not in cfg:
             cfg["output_path"] = f"./models/train/{model_name}_full"
 
@@ -181,6 +181,10 @@ def main():
         base_cmd = build_cmd_from_config(entry, base_required, cfg)
 
         for ngpu in args.gpus:
+            # force using gradient checkpointing for 1GPU to avoid OOM
+            if ngpu == 1:
+                cfg['use_gradient_checkpointing'] = True
+
             # 插入 --num_gpus（只对 deepspeed 有效）
             if base_cmd[0] == "deepspeed":
                 cmd = base_cmd[:1] + ["--num_gpus", str(ngpu)] + base_cmd[1:]
